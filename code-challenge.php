@@ -14,7 +14,7 @@ define('SOURCE_TOKEN', 'tok_visa');
  * 1. You can choose between the following gateways. We've provided some API credentials
  *    from a few of our sandboxes to streamline the process for ya:.
  *
- *    a) Stripe      - https://stripe.com/docs/api#create_charge
+ *    a) Stripe      - https://stripe.com/docs/api#create_chargeS
  *       Secret Key  - sk_test_lBzwJ4lQzQvEPZwgl3s59Mal
  *
  *    b) Authorize.Net       - http://developer.authorize.net/api/reference/#payment-transactions-charge-a-credit-card
@@ -197,9 +197,22 @@ class StripeGateway implements BasicPaymentGateway
     private ?string $transactionId;
 
     // Constructor
-    public function __construct(string $url, string $key)
+    public function __construct(string $key)
     {
         $this->key = $key;
+        $this->name = '';
+        $this->addressLine1 = '';
+        $this->addressLine2 = null;
+        $this->city = '';
+        $this->province = '';
+        $this->postalCode = '';
+        $this->country = '';
+        $this->cardNumber = '';
+        $this->cardCVV = '';
+        $this->expirationMonth = '';
+        $this->expirationYear = '';
+        $this->chargeErrors = [];
+        $this->transactionId = null;
     }
 
     public function setName(string $name): BasicPaymentGateway
@@ -275,24 +288,32 @@ class StripeGateway implements BasicPaymentGateway
 
     public function charge(int $amount, string $currency = 'USD'): bool
     {
-        unset($this->chargeErrors);
+        $this->chargeErrors = [];
+        $headers = [];
+        $headers[] = 'Content-Type: application/x-www-form-urlencoded';
         $ch = curl_init(API_URL);
         $post_data = [
             'amount' => 2000,
             'currency' => 'usd',
             'source' => SOURCE_TOKEN,
         ];
-        curl_setopt($ch, CURLOPT_HTTPHEADER, 'Content-Type: application/json');
-        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_USERNAME, $this->key);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($post_data));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $result = curl_exec($ch);
+        $charge = json_decode($result);
 
         if (curl_errno($ch)) {
             array_push($this->chargeErrors, curl_error($ch));
+
+            return false;
+        }
+
+        if (isset($charge->error)) {
+            array_push($this->chargeErrors, $charge->error);
 
             return false;
         }
@@ -302,8 +323,6 @@ class StripeGateway implements BasicPaymentGateway
         if (!$result) {
             return false;
         }
-
-        $charge = json_decode($result);
 
         $this->transactionId = $charge->balance_transaction;
 
